@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "66926778942",
+    "project_id": "backbenchergames-71cc9",
+    "storage_bucket": "backbenchergames-71cc9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:66926778942:android:8ce03db66307c88f810f6f",
+        "android_client_info": {
+          "package_name": "com.example.backbenchgames"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtjWB9WWCM6jmriUFEBHlz56SUI9no_zA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

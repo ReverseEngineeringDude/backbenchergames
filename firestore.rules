@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Profiles: users/{userId}
+    // Any authenticated user can read public profile details.
+    // Users can only write and update their own document.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // Multiplayer Rooms: rooms/{roomId}
+    // Authenticated users can read and join rooms.
+    match /rooms/{roomId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null &&
+        // User must be one of the registered players in the room
+        (request.auth.uid in resource.data.players.map(p => p.uid) ||
+         // Or joining a waiting room
+         resource.data.status == 'waiting');
+      allow delete: if false;
+    }
+
+    // Leaderboards: leaderboard/{gameId}/entries/{userId}
+    // Publicly readable by any authenticated user.
+    // Client writes are completely BLOCKED; only server-authoritative
+    // Cloud Functions with Admin SDK can write/update leaderboards.
+    match /leaderboard/{gameId}/entries/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}
