@@ -121,6 +121,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
                 // Avatar
                 AvatarWidget(
                   displayName: user.displayName,
+                  avatarUrl: user.avatarUrl,
                   size: 70,
                   borderColor: AppColors.playerX,
                 ),

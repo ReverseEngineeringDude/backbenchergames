@@ -50,132 +50,6 @@ class TicTacToeAI {
     String aiPlayer,
     String opponent,
   ) {
-    // 3x3 uses pure complete minimax
-    if (state.gridSize == 3) {
-      return _getMinimax3x3(state, available, aiPlayer, opponent);
-    }
-
-    // 6x6 and 9x9 use tactical heuristic search with immediate win/block
-    return _getTacticalMove(state, available, aiPlayer, opponent);
-  }
-
-  // ================= 3x3 Minimax =================
-
-  TicTacToeMove _getMinimax3x3(
-    TicTacToeState state,
-    List<int> available,
-    String aiPlayer,
-    String opponent,
-  ) {
-    if (available.length == 9) {
-      const openingMoves = [0, 2, 4, 6, 8];
-      final pick = openingMoves[_random.nextInt(openingMoves.length)];
-      return TicTacToeMove(index: pick, player: aiPlayer);
-    }
-
-    int bestScore = -100000;
-    int bestMove = available.first;
-
-    for (final moveIndex in available) {
-      final nextState = TicTacToeLogic.applyMove(
-        state,
-        TicTacToeMove(index: moveIndex, player: aiPlayer),
-      );
-
-      final score = _minimax3x3(
-        state: nextState,
-        depth: 0,
-        isMaximizing: false,
-        aiPlayer: aiPlayer,
-        opponent: opponent,
-        alpha: -100000,
-        beta: 100000,
-      );
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = moveIndex;
-      }
-    }
-
-    return TicTacToeMove(index: bestMove, player: aiPlayer);
-  }
-
-  int _minimax3x3({
-    required TicTacToeState state,
-    required int depth,
-    required bool isMaximizing,
-    required String aiPlayer,
-    required String opponent,
-    required int alpha,
-    required int beta,
-  }) {
-    final gameOver = TicTacToeLogic.checkGameOver(state);
-    if (gameOver.isOver) {
-      if (gameOver.winner == aiPlayer) {
-        return 10 - depth;
-      } else if (gameOver.winner == opponent) {
-        return depth - 10;
-      } else {
-        return 0;
-      }
-    }
-
-    final available = TicTacToeLogic.getAvailableMoves(state);
-
-    if (isMaximizing) {
-      int maxEval = -100000;
-      for (final moveIndex in available) {
-        final nextState = TicTacToeLogic.applyMove(
-          state,
-          TicTacToeMove(index: moveIndex, player: aiPlayer),
-        );
-        final evaluation = _minimax3x3(
-          state: nextState,
-          depth: depth + 1,
-          isMaximizing: false,
-          aiPlayer: aiPlayer,
-          opponent: opponent,
-          alpha: alpha,
-          beta: beta,
-        );
-        maxEval = max(maxEval, evaluation);
-        alpha = max(alpha, evaluation);
-        if (beta <= alpha) break;
-      }
-      return maxEval;
-    } else {
-      int minEval = 100000;
-      for (final moveIndex in available) {
-        final nextState = TicTacToeLogic.applyMove(
-          state,
-          TicTacToeMove(index: moveIndex, player: opponent),
-        );
-        final evaluation = _minimax3x3(
-          state: nextState,
-          depth: depth + 1,
-          isMaximizing: true,
-          aiPlayer: aiPlayer,
-          opponent: opponent,
-          alpha: alpha,
-          beta: beta,
-        );
-        minEval = min(minEval, evaluation);
-        beta = min(beta, evaluation);
-        if (beta <= alpha) break;
-      }
-      return minEval;
-    }
-  }
-
-  // ================= 6x6 & 9x9 Tactical Heuristic Minimax =================
-
-  TicTacToeMove _getTacticalMove(
-    TicTacToeState state,
-    List<int> available,
-    String aiPlayer,
-    String opponent,
-  ) {
     // 1. Immediate Win: If AI can win in 1 move, take it!
     for (final moveIndex in available) {
       final nextState = TicTacToeLogic.applyMove(
@@ -198,20 +72,28 @@ class TicTacToeAI {
       }
     }
 
-    // 3. Opening move: if empty, play near center
+    // 3. Opening move: if empty, play near center or corners
     if (available.length == state.totalCells) {
-      final centerRow = state.gridSize ~/ 2;
-      final centerCol = state.gridSize ~/ 2;
-      return TicTacToeMove(
-        index: centerRow * state.gridSize + centerCol,
-        player: aiPlayer,
-      );
+      if (state.gridSize == 3) {
+        const openingMoves = [0, 2, 4, 6, 8];
+        final pick = openingMoves[_random.nextInt(openingMoves.length)];
+        return TicTacToeMove(index: pick, player: aiPlayer);
+      } else {
+        final centerRow = state.gridSize ~/ 2;
+        final centerCol = state.gridSize ~/ 2;
+        return TicTacToeMove(
+          index: centerRow * state.gridSize + centerCol,
+          player: aiPlayer,
+        );
+      }
     }
 
-    // 4. Candidate filtering: Only search moves adjacent to existing pieces
-    final candidates = _getCandidateMoves(state, available);
+    // Depth limits based on grid size to prevent lag while remaining unbeatable/expert
+    final maxDepth = state.gridSize == 3 ? 9 : (state.gridSize == 6 ? 4 : 3);
 
-    // 5. Tactical evaluation with depth-2 minimax over top candidates
+    // Filter candidate moves for large boards to optimize search
+    final candidates = state.gridSize == 3 ? available : _getCandidateMoves(state, available);
+
     int bestScore = -10000000;
     int bestMove = candidates.first;
 
@@ -221,7 +103,16 @@ class TicTacToeAI {
         TicTacToeMove(index: moveIndex, player: aiPlayer),
       );
 
-      final score = _evaluateState(nextState, aiPlayer, opponent);
+      final score = _minimax(
+        state: nextState,
+        depth: 1,
+        maxDepth: maxDepth,
+        isMaximizing: false,
+        aiPlayer: aiPlayer,
+        opponent: opponent,
+        alpha: -10000000,
+        beta: 10000000,
+      );
 
       if (score > bestScore) {
         bestScore = score;
@@ -232,7 +123,84 @@ class TicTacToeAI {
     return TicTacToeMove(index: bestMove, player: aiPlayer);
   }
 
-  /// Filters candidate moves to cells within distance 1 of any placed piece.
+  int _minimax({
+    required TicTacToeState state,
+    required int depth,
+    required int maxDepth,
+    required bool isMaximizing,
+    required String aiPlayer,
+    required String opponent,
+    required int alpha,
+    required int beta,
+  }) {
+    final gameOver = TicTacToeLogic.checkGameOver(state);
+    if (gameOver.isOver) {
+      if (gameOver.winner == aiPlayer) {
+        return 1000000 - depth;
+      } else if (gameOver.winner == opponent) {
+        return depth - 1000000;
+      } else {
+        return 0; // Draw
+      }
+    }
+
+    if (depth >= maxDepth) {
+      return _evaluateState(state, aiPlayer, opponent);
+    }
+
+    final available = TicTacToeLogic.getAvailableMoves(state);
+    final candidates = state.gridSize == 3 ? available : _getCandidateMoves(state, available);
+
+    if (candidates.isEmpty) return 0;
+
+    if (isMaximizing) {
+      int maxEval = -10000000;
+      for (final moveIndex in candidates) {
+        final nextState = TicTacToeLogic.applyMove(
+          state,
+          TicTacToeMove(index: moveIndex, player: aiPlayer),
+        );
+        final evaluation = _minimax(
+          state: nextState,
+          depth: depth + 1,
+          maxDepth: maxDepth,
+          isMaximizing: false,
+          aiPlayer: aiPlayer,
+          opponent: opponent,
+          alpha: alpha,
+          beta: beta,
+        );
+        maxEval = max(maxEval, evaluation);
+        alpha = max(alpha, evaluation);
+        if (beta <= alpha) break;
+      }
+      return maxEval;
+    } else {
+      int minEval = 10000000;
+      for (final moveIndex in candidates) {
+        final nextState = TicTacToeLogic.applyMove(
+          state,
+          TicTacToeMove(index: moveIndex, player: opponent),
+        );
+        final evaluation = _minimax(
+          state: nextState,
+          depth: depth + 1,
+          maxDepth: maxDepth,
+          isMaximizing: true,
+          aiPlayer: aiPlayer,
+          opponent: opponent,
+          alpha: alpha,
+          beta: beta,
+        );
+        minEval = min(minEval, evaluation);
+        beta = min(beta, evaluation);
+        if (beta <= alpha) break;
+      }
+      return minEval;
+    }
+  }
+
+  /// Filters candidate moves to cells within distance 1 (or 2) of any placed piece.
   List<int> _getCandidateMoves(TicTacToeState state, List<int> available) {
     final candidateSet = <int>{};
     final n = state.gridSize;
@@ -242,8 +210,8 @@ class TicTacToeAI {
         final r = i ~/ n;
         final c = i % n;
 
-        for (int dr = -1; dr <= 1; dr++) {
-          for (int dc = -1; dc <= 1; dc++) {
+        for (int dr = -2; dr <= 2; dr++) {
+          for (int dc = -2; dc <= 2; dc++) {
             final nr = r + dr;
             final nc = c + dc;
             if (nr >= 0 && nr < n && nc >= 0 && nc < n) {
@@ -261,7 +229,7 @@ class TicTacToeAI {
     return candidateSet.toList();
   }
 
-  /// Heuristic evaluation of a board state for 6x6 and 9x9.
+  /// Heuristic evaluation of a board state for when maxDepth is reached.
   int _evaluateState(TicTacToeState state, String aiPlayer, String opponent) {
     final winLines = TicTacToeLogic.getWinLines(state.gridSize, state.winLength);
     int totalScore = 0;
@@ -280,17 +248,17 @@ class TicTacToeAI {
         }
       }
 
-      // If both players have pieces in this line, it's blocked
+      // If both players have pieces in this line, it's blocked and useless
       if (aiCount > 0 && opponentCount > 0) continue;
 
       if (aiCount > 0) {
-        if (aiCount == k) return 10000000;
-        if (aiCount == k - 1) totalScore += 5000;
+        if (aiCount == k) return 1000000;
+        if (aiCount == k - 1) totalScore += 50000;
         if (aiCount == k - 2) totalScore += 400;
         if (aiCount == k - 3) totalScore += 30;
       } else if (opponentCount > 0) {
-        if (opponentCount == k) return -10000000;
-        if (opponentCount == k - 1) totalScore -= 7000;
+        if (opponentCount == k) return -1000000;
+        if (opponentCount == k - 1) totalScore -= 70000; // Block opponent's near-win heavily
         if (opponentCount == k - 2) totalScore -= 500;
         if (opponentCount == k - 3) totalScore -= 40;
       }

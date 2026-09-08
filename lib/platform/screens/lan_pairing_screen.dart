@@ -4,6 +4,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/models/lan_room.dart';
 import '../../core/plugin/game_plugin.dart';
 import '../../core/rooms/lan_room_service.dart';
+import 'package:flutter/foundation.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../theme/app_colors.dart';
 import 'lan_game_screen.dart';
 
@@ -288,6 +290,20 @@ class _LanJoinScreenState extends State<LanJoinScreen> {
     }
   }
 
+  Future<void> _openScanner() async {
+    final scannedIp = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _QRScannerSheet(),
+    );
+
+    if (scannedIp != null && scannedIp.isNotEmpty) {
+      _ipController.text = scannedIp;
+      _connect();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -328,6 +344,8 @@ class _LanJoinScreenState extends State<LanJoinScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
+                  const SizedBox(height: 28),
+
                   const SizedBox(height: 28),
 
                   TextField(
@@ -371,7 +389,27 @@ class _LanJoinScreenState extends State<LanJoinScreen> {
                     label: Text(_connecting ? 'Connecting...' : 'CONNECT TO HOST'),
                   ),
 
-                  const SizedBox(height: 16),
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: const [
+                        Expanded(child: Divider(color: AppColors.cardBorder)),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('OR', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        ),
+                        Expanded(child: Divider(color: AppColors.cardBorder)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _connecting ? null : _openScanner,
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      label: const Text('SCAN QR CODE'),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
                   const Divider(color: AppColors.cardBorder),
                   const SizedBox(height: 12),
 
@@ -385,6 +423,68 @@ class _LanJoinScreenState extends State<LanJoinScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _QRScannerSheet extends StatefulWidget {
+  const _QRScannerSheet();
+
+  @override
+  State<_QRScannerSheet> createState() => _QRScannerSheetState();
+}
+
+class _QRScannerSheetState extends State<_QRScannerSheet> {
+  bool _found = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 16),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.cardBorder,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            child: Text(
+              'Scan Host QR Code',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: MobileScanner(
+                onDetect: (capture) {
+                  if (_found) return;
+                  final List<Barcode> barcodes = capture.barcodes;
+                  for (final barcode in barcodes) {
+                    final rawValue = barcode.rawValue;
+                    if (rawValue != null && rawValue.startsWith('backbench-lan://')) {
+                      _found = true;
+                      final ipPart = rawValue.replaceFirst('backbench-lan://', '');
+                      Navigator.of(context).pop(ipPart);
+                      break;
+                    }
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

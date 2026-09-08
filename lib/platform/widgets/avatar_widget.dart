@@ -36,17 +36,25 @@ class AvatarWidget extends StatelessWidget {
           color: borderColor ?? AppColors.playerX,
           width: 1.5,
         ),
+        image: avatarUrl != null && avatarUrl!.isNotEmpty
+            ? DecorationImage(
+                image: NetworkImage(avatarUrl!),
+                fit: BoxFit.cover,
+              )
+            : null,
       ),
-      child: Center(
-        child: Text(
-          initial,
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: size * 0.45,
-          ),
-        ),
-      ),
+      child: avatarUrl != null && avatarUrl!.isNotEmpty
+          ? null // Image is handled by DecorationImage
+          : Center(
+              child: Text(
+                initial,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: size * 0.45,
+                ),
+              ),
+            ),
     );
   }
 }

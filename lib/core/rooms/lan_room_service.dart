@@ -111,13 +111,16 @@ class LanRoomService {
       if (type == 'pong') {
         _lastPong = _nowMs();
       } else if (type == 'move') {
-        // Apply move server-side; broadcast new state
-        final moveData = msg['move'] as Map<String, dynamic>;
-        final newStateData = Map<String, dynamic>.from(room.stateData)
-          ..['lastMove'] = moveData;
-        final updated = room.copyWith(stateData: newStateData);
-        _stateController.add(updated);
-        _sendToGuest(updated.toJson());
+        // Guest calculated the new state and sent it
+        if (msg.containsKey('stateData')) {
+          final stateData = msg['stateData'] as Map<String, dynamic>;
+          final updated = room.copyWith(stateData: stateData);
+          // Update local host state and broadcast it back to guest as confirmation
+          _stateController.add(updated);
+          _sendToGuest(updated.toJson());
+        } else {
+          debugPrint('[LAN Host] Received old move format. Guest device needs to be updated/rebuilt with the latest code.');
+        }
       }
     } catch (e) {
       debugPrint('[LAN Host] parse error: $e');
@@ -208,9 +211,9 @@ class LanRoomService {
     });
   }
 
-  /// Sends a move to the host (guest only).
-  void sendMove(Map<String, dynamic> moveData) {
-    _sendToHost({'type': 'move', 'move': moveData});
+  /// Sends updated state data to the host (guest only).
+  void sendMove(Map<String, dynamic> stateData) {
+    _sendToHost({'type': 'move', 'stateData': stateData});
   }
 
   void _sendToHost(Map<String, dynamic> msg) {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/lan_room.dart';
+import '../../core/models/game_over_result.dart';
 import '../../core/plugin/game_plugin.dart';
 import '../../core/rooms/lan_room_service.dart';
 import '../theme/app_colors.dart';
@@ -35,6 +36,7 @@ class _LanGameScreenState extends State<LanGameScreen> {
   LanRoom? _room;
   StreamSubscription<LanRoom>? _sub;
   bool _hasShownDismantledDialog = false;
+  bool _hasShownGameOverDialog = false;
   bool _isSubmitting = false;
   bool _isExplicitlyLeaving = false;
 
@@ -43,16 +45,38 @@ class _LanGameScreenState extends State<LanGameScreen> {
     super.initState();
     _room = widget.initialRoom;
     _sub = widget.service.roomStream.listen(_onRoomUpdate);
+    _checkStateForGameOver(_room!);
   }
 
   void _onRoomUpdate(LanRoom room) {
-    if (!mounted) return;
+    if (!mounted || _isExplicitlyLeaving) return;
     setState(() => _room = room);
     if (room.isDismantled && !_hasShownDismantledDialog) {
       _hasShownDismantledDialog = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showDismantledDialog(room.dismantledReason ?? 'The session has ended.');
+        if (mounted && !_isExplicitlyLeaving) {
+          _showDismantledDialog(room.dismantledReason ?? 'The session has ended.');
+        }
       });
+    } else {
+      _checkStateForGameOver(room);
+    }
+  }
+
+  void _checkStateForGameOver(LanRoom room) {
+    if (room.isDismantled) return;
+    final gameState = widget.plugin.deserializeState(room.stateData);
+    final gameOver = widget.plugin.checkGameOver(gameState);
+
+    if (gameOver.isOver && !_hasShownGameOverDialog) {
+      _hasShownGameOverDialog = true;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted && !(_room?.isDismantled ?? false)) {
+          _showGameOverDialog(gameOver);
+        }
+      });
+    } else if (!gameOver.isOver && _hasShownGameOverDialog) {
+      _hasShownGameOverDialog = false;
     }
   }
 
@@ -84,6 +108,141 @@ class _LanGameScreenState extends State<LanGameScreen> {
     );
   }
 
+  void _showGameOverDialog(GameOverResult result) {
+    if (!mounted) return;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Game Over',
+      barrierColor: Colors.black.withAlpha(180),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        String title;
+        Color accentColor;
+        IconData icon;
+
+        final mySymbol = widget.isHost ? 'X' : 'O';
+        final player1Name = widget.initialRoom.hostDisplayName;
+        final player2Name = widget.initialRoom.guestDisplayName ?? 'Opponent';
+
+        if (result.isDraw) {
+          title = 'DRAW GAME!';
+          accentColor = AppColors.textSecondary;
+          icon = Icons.handshake_rounded;
+        } else if (result.winner == mySymbol) {
+          title = 'YOU WIN!';
+          accentColor = AppColors.playerX;
+          icon = Icons.emoji_events_rounded;
+        } else {
+          title = '${widget.isHost ? player2Name : player1Name} WINS!';
+          accentColor = AppColors.playerO;
+          icon = Icons.emoji_events_rounded;
+        }
+
+        return Center(
+          child: ScaleTransition(
+            scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 340,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: accentColor, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withAlpha(80),
+                      blurRadius: 30,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 64, color: accentColor),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                        color: accentColor,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accentColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _playAgain();
+                        },
+                        child: const Text(
+                          'PLAY AGAIN',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _leaveGame();
+                        },
+                        child: const Text('Back to Lobby'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _playAgain() {
+    final sd = _room!.stateData;
+    String? variantId;
+    if (sd.containsKey('gridSize')) {
+      variantId = '${sd['gridSize']}x${sd['gridSize']}';
+    }
+    
+    // Create new blank state using the same plugin and variant
+    final nextState = widget.plugin.initialState(variantId: variantId);
+    final nextStateData = widget.plugin.serializeState(nextState);
+    final updated = _room!.copyWith(stateData: nextStateData);
+    
+    if (widget.isHost) {
+      widget.service.broadcastState(updated);
+    } else {
+      widget.service.sendMove(nextStateData);
+    }
+    
+    setState(() => _room = updated);
+    _checkStateForGameOver(updated);
+  }
+
   void _onMove(dynamic move) async {
     final room = _room;
     if (room == null || room.isDismantled || _isSubmitting) return;
@@ -94,7 +253,6 @@ class _LanGameScreenState extends State<LanGameScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final serialized = widget.plugin.serializeMove(move);
       final nextState = widget.plugin.applyMove(gameState, move);
       final nextStateData = widget.plugin.serializeState(nextState);
 
@@ -105,12 +263,21 @@ class _LanGameScreenState extends State<LanGameScreen> {
         widget.service.broadcastState(updated);
         setState(() => _room = updated);
       } else {
-        // Guest sends move to host and waits for broadcast
-        widget.service.sendMove(serialized);
+        // Guest applies move, sends new state to host, and updates locally instantly for smooth UI
+        widget.service.sendMove(nextStateData);
+        setState(() => _room = updated);
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  void _leaveGame() {
+    setState(() => _isExplicitlyLeaving = true);
+    widget.service.dismantle(reason: 'Opponent left the game');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
   }
 
   void _confirmLeave() {
@@ -129,10 +296,8 @@ class _LanGameScreenState extends State<LanGameScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
-              _isExplicitlyLeaving = true;
               Navigator.of(context).pop(); // dialog
-              widget.service.dismantle(reason: 'Opponent left the game');
-              Navigator.of(context).pop(); // game screen
+              _leaveGame();
             },
             child: const Text('Leave', style: TextStyle(color: Colors.white)),
           ),
@@ -187,7 +352,7 @@ class _LanGameScreenState extends State<LanGameScreen> {
 
   Widget _buildWaiting(LanRoom room) {
     return PopScope(
-      canPop: false,
+      canPop: _isExplicitlyLeaving || room.isDismantled,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
@@ -309,7 +474,7 @@ class _LanGameScreenState extends State<LanGameScreen> {
     final isMyTurn = (currentTurn == mySymbol) && !gameOver.isOver;
 
     return PopScope(
-      canPop: false,
+      canPop: _isExplicitlyLeaving || room.isDismantled,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
@@ -355,8 +520,8 @@ class _LanGameScreenState extends State<LanGameScreen> {
                 child: Column(
                   children: [
                     TurnIndicator(
-                      player1Name: room.hostDisplayName,
-                      player2Name: room.guestDisplayName ?? 'Opponent',
+                      player1Name: room.hostDisplayName + (widget.isHost ? ' (You)' : ''),
+                      player2Name: (room.guestDisplayName ?? 'Opponent') + (!widget.isHost ? ' (You)' : ''),
                       player1Symbol: 'X',
                       player2Symbol: 'O',
                       isPlayer1Turn: currentTurn == 'X',
@@ -406,17 +571,6 @@ class _LanGameScreenState extends State<LanGameScreen> {
                       ),
                     ),
 
-                    if (gameOver.isOver)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Back to Lobby'),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
